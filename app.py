@@ -37,7 +37,7 @@ st.markdown("""
 unsafe_allow_html=True
 )
 
-DATA_PATH = r"D:\Solid'Africa\OneDrive - SolidAfrica\Python Backend"
+DATA_PATH = "data"
 
 # ------------------------------
 # Define mappings
@@ -993,3 +993,4 @@ if not df_comments.empty:
         )
 else:
     st.info("No comments available for the selected date/hospital.")
+    

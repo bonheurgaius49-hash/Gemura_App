@@ -28,14 +28,6 @@ unsafe_allow_html=True
 )
 
 # Wrap content in the div with the class
-st.markdown("""
-<div class="dashboard-paper">
-    <h1>Beneficiaries Served by day</h1>
-    <p>This dashboard tracks daily Lunch production for the Gemura Program across hospitals and diet categories. It updates dynamically by date and hospital, applies a 7-day average when submissions are missing, and highlights gaps in reporting to support performance monitoring.</p>
-
-""", 
-unsafe_allow_html=True
-)
 
 DATA_PATH = "data"
 
@@ -144,853 +136,166 @@ special_merged = special_merged.merge(dates, on="Date", how="left")
 # Connect diet to special only
 special_merged = special_merged.merge(diet, on="Diet", how="left")
 
+import datetime
 # ------------------------------
-# Now regular_merged and special_merged have all connections
+# Ensure Date is datetime
 # ------------------------------
-print("Regular merged shape:", regular_merged.shape)
-print("Special merged shape:", special_merged.shape)
-import streamlit as st
+regular_merged["Date"] = pd.to_datetime(regular_merged["Date"])
+special_merged["Date"] = pd.to_datetime(special_merged["Date"])
 
-st.sidebar.image("Sidebar_image.png", width=250)
-# Get unique hospitals from the merged table
-hospital_options = sorted(regular_merged["Hospital"].dropna().unique())
+today = datetime.date.today()
 
-# Add an "All Hospitals" option at the beginning
-hospital_options = ["All Hospitals"] + hospital_options
+real_today = f"<div style='font-size:18px;'>Today: " + str(datetime.date.today()) + "</div>"
+st.markdown(real_today, unsafe_allow_html=True)
 
-# Sidebar dropdown
-selected_hospital = st.sidebar.selectbox("Select Hospital", hospital_options)
-
-# Filter based on selection
-if selected_hospital == "All Hospitals":
-    regular_filtered = regular_merged.copy()
-    special_filtered = special_merged.copy()
-else:
-    regular_filtered = regular_merged[regular_merged["Hospital"] == selected_hospital]
-    special_filtered = special_merged[special_merged["Hospital"] == selected_hospital]
-
-# --- Date slicer ---
-# --- Single Date slicer ---
-min_date = regular_merged["Date"].min()
-max_date = regular_merged["Date"].max()
-
-selected_date = st.sidebar.date_input(
-    "Select Date",
-    value=min_date,       # default selected date
-    min_value=min_date,
-    max_value=max_date
-)
-
-# Ensure selected_date is a single date (not a tuple)
-if isinstance(selected_date, tuple) or isinstance(selected_date, list):
-    selected_date = selected_date[0]
-
-selected_date = pd.to_datetime(selected_date)
-
-# Example: Regular Diet filtered by hospital + selected date
-regular_day = regular_merged[
-    (regular_merged["Hospital"] == selected_hospital) &
-    (regular_merged["Date"] == pd.to_datetime(selected_date))
-]
-
-if regular_day.empty:
-    # If no submissions on selected date, calculate 7-day average
-    end_date = pd.to_datetime(selected_date)
-    start_date = end_date - pd.Timedelta(days=7)
-
-    # Filter last 7 days **with submissions**
-    last_7_days = regular_merged[
-        (regular_merged["Hospital"] == selected_hospital) &
-        (regular_merged["Date"] >= start_date) &
-        (regular_merged["Date"] < end_date)
-    ]
-
-# --- Single Hospital Function ---
-def total_lunch_metric(merged_df, hospital, selected_date):
-    """
-    Returns total Lunch for selected hospital and date.
-    If no submission on selected date, returns 7-day average of past submissions
-    and a note that it is an average.
-    """
-    selected_date = pd.to_datetime(selected_date)
+# ------------------------------
+# Metric Calculation Function
+# ------------------------------
+def calculate_metric(df, hospital_name, diet_name=None):
     
-    if hospital == "All Hospitals":
-        df_hosp = merged_df.copy()
-    else:
-        df_hosp = merged_df[merged_df["Hospital"] == hospital]
-    
-    df_day = df_hosp[df_hosp["Date"] == selected_date]
-    
-    if not df_day.empty:
-        total_lunch = df_day["Lunch"].sum()
-        note = f"Total Lunch for {selected_date.date()}"
-    else:
-        end_date = selected_date - pd.Timedelta(days=1)
-        start_date = selected_date - pd.Timedelta(days=7)
-        last_7_days = df_hosp[
-            (df_hosp["Date"] >= start_date) &
-            (df_hosp["Date"] <= end_date)
-        ]
-        if not last_7_days.empty:
-            daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-            total_lunch = daily_sums.mean()
-            note = f"No submission on {selected_date.date()}. Returning 7-day average based on past submissions."
-        else:
-            total_lunch = 0
-            note = f"No submission on {selected_date.date()} and no data in last 7 days."
-    
-    return total_lunch, note
-
-# --- all Hospitals Function ---
-def total_lunch_all_hospitals(merged_df, selected_date):
-    selected_date = pd.to_datetime(selected_date)
-    total_lunch = 0
-    no_submission_hospitals = []
-
-    hospitals = merged_df["Hospital"].dropna().unique()
-    
-    for hosp in hospitals:
-        df_hosp = merged_df[merged_df["Hospital"] == hosp]
-        df_day = df_hosp[df_hosp["Date"] == selected_date]
-        
-        if not df_day.empty:
-            lunch = df_day["Lunch"].sum()
-        else:
-            end_date = selected_date - pd.Timedelta(days=1)
-            start_date = selected_date - pd.Timedelta(days=7)
-            last_7_days = df_hosp[
-                (df_hosp["Date"] >= start_date) &
-                (df_hosp["Date"] <= end_date)
-            ]
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                lunch = daily_sums.mean()
-                no_submission_hospitals.append(hosp)
-            else:
-                lunch = 0
-                no_submission_hospitals.append(hosp)
-        
-        total_lunch += lunch
-
-    if no_submission_hospitals:
-        caption_text = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-    else:
-        caption_text = f"All hospitals had submissions on {selected_date.date()}"
-    
-    return total_lunch, caption_text
-
-# --- Usage ---
-if selected_hospital == "All Hospitals":
-    total_lunch_value, note_text = total_lunch_all_hospitals(regular_merged, selected_date)
-else:
-    total_lunch_value, note_text = total_lunch_metric(regular_merged, selected_hospital, selected_date)
-
-st.metric("Regular Diet", round(total_lunch_value))
-st.caption(note_text)
-
-def post_partum_lunch_metric_hospital(special_df, selected_date, selected_hospital):
-    """
-    Returns total Lunch for Post-Partum care diet respecting hospital slicer.
-    If no submission on that date for a hospital, returns 7-day average.
-    For 'All Hospitals', sums across hospitals and lists hospitals with no submission in caption.
-    """
-    selected_date = pd.to_datetime(selected_date)
-    
-    # --- Clean data ---
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-    
-    # Filter for Post-Partum care diet
-    df_diet = df[df["Diet"] == "Post-Partum care diet"]
-    
-    if selected_hospital == "All Hospitals":
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-        
-        for hosp in hospitals:
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-            
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                # 7-day average
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-                last_7_days = df_h[(df_h["Date"] >= start_date) & (df_h["Date"] <= end_date)]
-                
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-            
-            total_lunch += lunch
-        
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-    
-    else:
-        # Single hospital
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-        
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total Post Partum Lunch for {selected_hospital} on {selected_date.date()}"
-        else:
-            # 7-day average
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-            last_7_days = df_h[(df_h["Date"] >= start_date) & (df_h["Date"] <= end_date)]
-            
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital}. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = f"No submission on {selected_date.date()} and no data in last 7 days for {selected_hospital}."
-    
-    return total_lunch, note
-# --- Usage ---
-lunch_value, note_text = post_partum_lunch_metric_hospital(
-    special_merged, selected_date, selected_hospital
-)
-
-st.metric("Total Post-Partum care diet", round(lunch_value))
-st.caption(note_text)
-
-def pediatric_diet_care_metric (special_df, selected_date, selected_hospital):
-    """
-    Returns total Lunch for Pediatric care diet respecting hospital slicer.
-    If no submission on that date for a hospital, returns 7-day average.
-    For 'All Hospitals', sums across hospitals and lists hospitals with no submission in caption.
-    """
-    selected_date = pd.to_datetime(selected_date)
-    
-    # --- Clean data ---
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-    
-    # Filter for Pediatric care diet
-    df_diet = df[df["Diet"] == "Pediatric care diet"]
-    
-    if selected_hospital == "All Hospitals":
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-        
-        for hosp in hospitals:
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-            
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                # 7-day average
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-                last_7_days = df_h[(df_h["Date"] >= start_date) & (df_h["Date"] <= end_date)]
-                
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-            
-            total_lunch += lunch
-        
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-    
-    else:
-        # Single hospital
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-        
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total Pediatric care diet for {selected_hospital} on {selected_date.date()}"
-        else:
-            # 7-day average
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-            last_7_days = df_h[(df_h["Date"] >= start_date) & (df_h["Date"] <= end_date)]
-            
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital}. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = f"No submission on {selected_date.date()} and no data in last 7 days for {selected_hospital}."
-    
-    return total_lunch, note
-
-lunch_value, note_text = pediatric_diet_care_metric(
-    special_merged, selected_date, selected_hospital
-)
-st.metric("Total Pediatric care diet", round(lunch_value))
-st.caption(note_text)
-
-def easy_digest_care_diet_metric(special_df, selected_date, selected_hospital):
-
-    selected_date = pd.to_datetime(selected_date)
-
-    # --- Clean data ---
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-
-    # Filter for Easy digest care diet
-    df_diet = df[df["Diet"] == "Easy digest care diet"]
-
-    if selected_hospital == "All Hospitals":
-
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-
-        for hosp in hospitals:
-
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-
-                last_7_days = df_h[
-                    (df_h["Date"] >= start_date) &
-                    (df_h["Date"] <= end_date)
-                ]
-
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-
-            total_lunch += lunch
-
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-
-    else:
-        # ✅ FIXED SINGLE HOSPITAL LOGIC
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total Easy digest care diet lunch for {selected_hospital} on {selected_date.date()}"
-        else:
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-
-            last_7_days = df_h[
-                (df_h["Date"] >= start_date) &
-                (df_h["Date"] <= end_date)
-            ]
-
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital}. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = "No submission and no data in last 7 days."
-
-    return total_lunch, note
-
-lunch_value, note_text = easy_digest_care_diet_metric(
-    special_merged, selected_date, selected_hospital
-)
-st.metric("Total Easy digest care diet", round(lunch_value))
-st.caption(note_text)
-
-def high_energy_protein_care_diet_metric(special_df, selected_date, selected_hospital):
-    selected_date = pd.to_datetime(selected_date)
-
-    # --- Clean data ---
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-
-    # Filter for High energy/protein care diet
-    df_diet = df[df["Diet"] == "High energy/protein care diet"]
-
-    if selected_hospital == "All Hospitals":
-
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-
-        for hosp in hospitals:
-
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-
-                last_7_days = df_h[
-                    (df_h["Date"] >= start_date) &
-                    (df_h["Date"] <= end_date)
-                ]
-
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-
-            total_lunch += lunch
-
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-
-    else:
-        # ✅ FIXED SINGLE HOSPITAL LOGIC
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total High energy/protein care diet lunch for {selected_hospital} on {selected_date.date()}"
-        else:
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-
-            last_7_days = df_h[
-                (df_h["Date"] >= start_date) &
-                (df_h["Date"] <= end_date)
-            ]
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital}. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = "No submission and no data in last 7 days."
-    return total_lunch, note
-
-lunch_value, note_text = high_energy_protein_care_diet_metric(
-    special_merged, selected_date, selected_hospital
-)
-st.metric("Total High energy/protein care diet", round(lunch_value))    
-st.caption(note_text)
-
-def diabetic_care_diet_metric(special_df, selected_date, selected_hospital):
-    selected_date = pd.to_datetime(selected_date)
-
-    # --- Clean data ---
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-
-    # Filter for Diabetic care diet
-    df_diet = df[df["Diet"] == "Diabetic care diet"]
-
-    if selected_hospital == "All Hospitals":
-
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-
-        for hosp in hospitals:
-
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-
-                last_7_days = df_h[
-                    (df_h["Date"] >= start_date) &
-                    (df_h["Date"] <= end_date)
-                ]
-
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-
-            total_lunch += lunch
-
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-
-    else:
-        # ✅ FIXED SINGLE HOSPITAL LOGIC
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total Diabetic care diet lunch for {selected_hospital} on {selected_date.date()}"
-        else:
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-
-            last_7_days = df_h[
-                (df_h["Date"] >= start_date) &
-                (df_h["Date"] <= end_date)
-            ]
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital}. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = "No submission and no data in last 7 days."
-
-    return total_lunch, note
-lunch_value, note_text = diabetic_care_diet_metric(
-    special_merged, selected_date, selected_hospital
-)
-st.metric("Total Diabetic care diet", round(lunch_value))
-st.caption(note_text)
-
-def sodium_restricted_care_diet_metric(special_df, selected_date, selected_hospital):
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-
-# Filter for Sodium restricted/No salt diet
-    df_diet = df[df["Diet"] == "Sodium restricted/No salt diet"]
-    
-    if selected_hospital == "All Hospitals":
-
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-
-        for hosp in hospitals:
-
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-
-                last_7_days = df_h[
-                    (df_h["Date"] >= start_date) &
-                    (df_h["Date"] <= end_date)
-                ]
-
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-
-            total_lunch += lunch
-
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-    else:
-        #single hospital
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total Sodium restricted/No salt diet lunch for {selected_hospital} on {selected_date.date()}"
-        else:
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-
-            last_7_days = df_h[
-                (df_h["Date"] >= start_date) &
-                (df_h["Date"] <= end_date)
-            ]
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital} Hospital. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = f"No submission and no data in last 7 days for {selected_hospital} Hospital."
-
-    return total_lunch, note
-
-lunch_value, note_text = sodium_restricted_care_diet_metric(
-        special_merged, selected_date, selected_hospital
-)
-st.metric("Total Sodium restricted/No salt diet", round(lunch_value))
-st.caption(note_text)
-
-def izere_pavillion_other_private_inpatient_diet_metric(special_df, selected_date, selected_hospital):
-    df = special_df.copy()
-    df["Diet"] = df["Diet"].astype(str).str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Lunch"] = pd.to_numeric(df["Lunch"], errors="coerce").fillna(0)
-
-    # Filter for IZERE/Pavillion/Other Private inpatient diets
-    df_diet = df[df["Diet"] == "IZERE/Pavillion/Other Private inpatient diets"]
-
-    if selected_hospital == "All Hospitals":
-
-        total_lunch = 0
-        no_submission_hospitals = []
-        hospitals = df_diet["Hospital"].dropna().unique()
-
-        for hosp in hospitals:
-            df_h = df_diet[df_diet["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-
-                last_7_days = df_h[
-                    (df_h["Date"] >= start_date) &
-                    (df_h["Date"] <= end_date)
-                ]
-
-                if not last_7_days.empty:
-                    daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                    lunch = daily_sums.mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-
-            total_lunch += lunch
-        
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
-        else:
-            note = f"All hospitals had submissions on {selected_date.date()}"
-    else:
-        # Single hospital
-        df_h = df_diet[df_diet["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-            note = f"Total IZERE/Pavillion/Other Private inpatient diet lunch for {selected_hospital} on {selected_date.date()}"
-        else:
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-
-            last_7_days = df_h[
-                (df_h["Date"] >= start_date) &
-                (df_h["Date"] <= end_date)
-            ]
-
-            if not last_7_days.empty:
-                daily_sums = last_7_days.groupby("Date")["Lunch"].sum()
-                total_lunch = daily_sums.mean()
-                note = f"No submission on {selected_date.date()} for {selected_hospital}. Returning 7-day average."
-            else:
-                total_lunch = 0
-                note = f"No submission and no data in last 7 days for {selected_hospital} Hospital."
-    return total_lunch, note
-lunch_value, note_text = izere_pavillion_other_private_inpatient_diet_metric(
-    special_merged, selected_date, selected_hospital
-)
-st.metric("Total IZERE/Pavillion/Other Private inpatient diets", round(lunch_value))
-st.caption(note_text)
-
-def calculate_lunch(df, selected_date, selected_hospital, diet_name=None):
-    """
-    Returns total Lunch for a diet dataframe, respecting hospital and date.
-    If diet_name is given, filters by that diet.
-    Uses 7-day average if no submission.
-    Works for single or all hospitals.
-    """
-    selected_date = pd.to_datetime(selected_date)
-    df_clean = df.copy()
-    
-    # Clean columns
-    df_clean["Date"] = pd.to_datetime(df_clean["Date"], errors="coerce")
-    df_clean["Lunch"] = pd.to_numeric(df_clean["Lunch"], errors="coerce").fillna(0)
-    df_clean["Hospital"] = df_clean["Hospital"].astype(str).str.strip()
     if diet_name:
-        df_clean = df_clean[df_clean["Diet"].astype(str).str.strip() == diet_name]
-
-    # Default values
-    total_lunch = 0
-    note = ""
-    
-    if selected_hospital == "All Hospitals":
-        hospitals = df_clean["Hospital"].dropna().unique()
-        no_submission_hospitals = []
-        
-        for hosp in hospitals:
-            df_h = df_clean[df_clean["Hospital"] == hosp]
-            df_day = df_h[df_h["Date"] == selected_date]
-            
-            if not df_day.empty:
-                lunch = df_day["Lunch"].sum()
-            else:
-                # 7-day average
-                start_date = selected_date - pd.Timedelta(days=7)
-                end_date = selected_date - pd.Timedelta(days=1)
-                last_7_days = df_h[(df_h["Date"] >= start_date) & (df_h["Date"] <= end_date)]
-                
-                if not last_7_days.empty:
-                    lunch = last_7_days.groupby("Date")["Lunch"].sum().mean()
-                    no_submission_hospitals.append(hosp)
-                else:
-                    lunch = 0
-                    no_submission_hospitals.append(hosp)
-            
-            total_lunch += lunch
-        
-        if no_submission_hospitals:
-            note = "No submission on selected day for: " + ", ".join(no_submission_hospitals)
+        df_h = df[(df["Hospital"] == hospital_name) & (df["Diet"] == diet_name)].copy()
     else:
-        # Single hospital
-        df_h = df_clean[df_clean["Hospital"] == selected_hospital]
-        df_day = df_h[df_h["Date"] == selected_date]
-        if not df_day.empty:
-            total_lunch = df_day["Lunch"].sum()
-        else:
-            start_date = selected_date - pd.Timedelta(days=7)
-            end_date = selected_date - pd.Timedelta(days=1)
-            last_7_days = df_h[(df_h["Date"] >= start_date) & (df_h["Date"] <= end_date)]
-            if not last_7_days.empty:
-                total_lunch = last_7_days.groupby("Date")["Lunch"].sum().mean()
-            else:
-                total_lunch = 0
-        # note remains "" if no missing submissions
+        df_h = df[df["Hospital"] == hospital_name].copy()
     
-    return total_lunch, note
-
-# ---------------------------
-# Calculate totals for all diets
-# ---------------------------
-regular_total, regular_note = calculate_lunch(regular_merged, selected_date, selected_hospital)
-postpartum_total, pp_note = calculate_lunch(special_merged, selected_date, selected_hospital, "Post-Partum care diet")
-pediatric_total, ped_note = calculate_lunch(special_merged, selected_date, selected_hospital, "Pediatric care diet")
-easy_digest_total, ed_note = calculate_lunch(special_merged, selected_date, selected_hospital, "Easy digest care diet")
-sodium_total, sr_note = calculate_lunch(special_merged, selected_date, selected_hospital, "Sodium restricted/No salt diet")
-high_energy_total, he_note = calculate_lunch(special_merged, selected_date, selected_hospital, "High energy/protein care diet")
-diabetic_total, dia_note = calculate_lunch(special_merged, selected_date, selected_hospital, "Diabetic care diet")
-izere_total, izere_note = calculate_lunch(special_merged, selected_date, selected_hospital, "IZERE/Pavillion/Other Private inpatient diets")
-
-# Total meals across all diets
-total_meals = regular_total + postpartum_total + pediatric_total + easy_digest_total + sodium_total + high_energy_total + diabetic_total + izere_total
-
-# Combine all notes
-notes = [note for note in [regular_note, pp_note, ped_note, ed_note, sr_note, he_note, dia_note, izere_note] if note]
-total_note = "; ".join(notes) if notes else ""
-
-# ---------------------------
-# Display in Streamlit box
-# ---------------------------
-with st.container():
-    st.markdown(f"""
-        <div style="
-            border: 0px solid #ffffff; 
-            padding: 1px;
-            border-radius: 5px; 
-            background-color: #c91530; 
-            width: 220px; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center;
-        ">
-            <p style="color: #ffffff; margin: 0px 0 0 0; font-size: 22px; padding-bottom: 0px; padding-top: 10px; line-height: 1;">Total Meals Served</p>
-            <p style="color: #ffffff; margin: 0px 0 0 0; font-size: 50px; font-weight: bold; padding-bottom: 15px; padding-top: 5px;line-height: 1;">{round(total_meals)}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    df_h["Date_only"] = df_h["Date"].dt.date
+    
+    # --- TODAY DATA ---
+    today_data = df_h[df_h["Date_only"] == today]
+    
+    if not today_data.empty:
+        value = today_data["Lunch"].sum()
+        return round(value), False
+    
+    # --- 7-DAY AVERAGE (only days with submission) ---
+    past_data = df_h[df_h["Date_only"] < today]
+    
+    if past_data.empty:
+        return 0, False
+    
+    # Group by date to get daily totals
+    daily_totals = (
+        past_data
+        .groupby("Date_only")["Lunch"]
+        .sum()
+        .sort_index(ascending=False)
+        .head(7)
+    )
+    
+    if daily_totals.empty:
+        return 0, False
+    
+    avg_value = daily_totals.mean()
+    
+    return round(avg_value), True
 
 
-# Clean Challenge_satisfaction column: remove line breaks
-regular_merged["Challenge_satisfaction"] = (
-    regular_merged["Challenge_satisfaction"]
-    .astype(str)                     # ensure it's string
-    .str.replace(r'[\r\n]+', ' ', regex=True)  # replace line breaks with a space
-    .str.strip()                     # remove leading/trailing spaces
-)
+# ------------------------------
+# List of Hospitals
+# ------------------------------
+hospital_list = sorted(regular_merged["Hospital"].dropna().unique())
 
-# Filter data for selected date
-df_comments = regular_merged[regular_merged["Date"] == pd.to_datetime(selected_date)]
-
-# If a specific hospital is selected, filter
-if selected_hospital != "All Hospitals":
-    df_comments = df_comments[df_comments["Hospital"] == selected_hospital]
-
-# Only keep rows with comments
-df_comments = df_comments[df_comments["Challenge_satisfaction"].notna()]
-
-# Define colors for hospitals
-hospital_colors = {
-    "CHUK": "#FF6F61",
-    "KIBAGABAGA": "#6B5B95",
-    "MASAKA": "#88B04B",
-    "MUHIMA": "#6F087F",
-    "NYARUGENGE": "#4D7BD1"
+# ------------------------------
+# CSS Styling for Cards
+# ------------------------------
+st.markdown("""
+<style>
+.hospital-card {
+    background-color: white;
+    padding: 25px;
+    border-radius: 18px;
+    box-shadow: 2px 4px 15px rgba(0,0,0,0.08);
+    margin-bottom: 25px;
 }
+.hospital-title {
+    color: #c01e2e;
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+.metric-row {
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+.caption {
+    font-size: 13px;
+    color: #777777;
+    margin-left: 8px;
+}
+.total-meals {
+    margin-top: 12px;
+    font-weight: bold;
+    font-size: 18px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# Display comments
-if not df_comments.empty:
-    st.markdown("### Comments and Recommendations")
-    
-    for idx, row in df_comments.iterrows():
-        hosp = row["Hospital"]
-        comment = row["Challenge_satisfaction"]
-        color = hospital_colors.get(hosp, "#000000")  # default black if hospital not in dict
+st.markdown("Beneficiaries Served by day")
 
-        st.markdown(
-            f'<p style="color:{color}; font-weight:500;">'
-            f'<b>{hosp}:</b> {comment}'
-            f'</p>',
-            unsafe_allow_html=True
-        )
-else:
-    st.info("No comments available for the selected date/hospital.")
+# ------------------------------
+# Responsive Layout (3 per row)
+# ------------------------------
+
+cols_per_row = 5
+
+for i in range(0, len(hospital_list), cols_per_row):
     
+    cols = st.columns(cols_per_row)
+    
+    for col, hospital in zip(cols, hospital_list[i:i+cols_per_row]):
+        
+        with col:
+            
+            regular_value, regular_avg = calculate_metric(regular_merged, hospital)
+            postpartum, postpartum_avg = calculate_metric(special_merged, hospital, "Post-Partum care diet")
+            pediatric, pediatric_avg = calculate_metric(special_merged, hospital, "Pediatric care diet")
+            easy_digest, easy_avg = calculate_metric(special_merged, hospital, "Easy digest care diet")
+            high_energy, high_avg = calculate_metric(special_merged, hospital, "High energy/protein care diet")
+            diabetic, diabetic_avg = calculate_metric(special_merged, hospital, "Diabetic care diet")
+            sodium, sodium_avg = calculate_metric(special_merged, hospital, "Sodium restricted/No salt diet")
+            izere, izere_avg = calculate_metric(special_merged, hospital, "IZERE/Pavillion/Other Private inpatient diets")
+            
+            total_meals = (
+                regular_value +
+                postpartum +
+                pediatric +
+                easy_digest +
+                high_energy +
+                diabetic +
+                sodium +
+                izere
+            )
+
+            # 👇 RENDERING MUST STAY INSIDE HERE 👇
+
+            st.markdown(
+                f"<h3 style='color:#c01e2e;margin-bottom:0px;'>{hospital}</h3>",
+                unsafe_allow_html=True
+            )
+
+            def show_metric(label, value, avg_flag):
+                caption = (
+                    " <span style='color:#777;font-size:13px;'>(7 day average)</span>"
+                    if avg_flag
+                    else " <span style='color:#777;font-size:13px;'>(Today's data)</span>"
+                )
+                value_html = f"<span style='font-weight:bold;font-size:18px;'>{value}</span>"
+                
+                st.markdown(
+                    f"<div style='font-size:14px;margin-bottom:6px;'>{label}:<br>{value_html}{caption}</div>",
+                    unsafe_allow_html=True
+                )
+
+            show_metric("Regular Diet", regular_value, regular_avg)
+            show_metric("Post-Partum diet", postpartum, postpartum_avg)
+            show_metric("Pediatric diet", pediatric, pediatric_avg)
+            show_metric("Easy digest diet", easy_digest, easy_avg)
+            show_metric("High energy diet", high_energy, high_avg)
+            show_metric("Diabetic diet", diabetic, diabetic_avg)
+            show_metric("No salt diet", sodium, sodium_avg)
+            show_metric("IZERE diets", izere, izere_avg)
+
+            st.markdown(
+                f"<div style='margin-top:12px;font-weight:bold;font-size:18px;'>Total Meals: {total_meals}</div>",
+                unsafe_allow_html=True
+            )

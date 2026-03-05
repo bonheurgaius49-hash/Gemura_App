@@ -143,6 +143,17 @@ import datetime
 regular_merged["Date"] = pd.to_datetime(regular_merged["Date"])
 special_merged["Date"] = pd.to_datetime(special_merged["Date"])
 
+col1, col2 = st.columns([1, 6])
+
+with col1:
+    st.image("Sidebar_image.png", width=80)
+
+with col2:
+    st.markdown(
+        "<h1 style='color:#c01e2e;margin-bottom:0px;'>Gemura Program Dashboard</h1>",
+        unsafe_allow_html=True
+    )
+
 today = datetime.date.today()
 
 real_today = f"<div style='font-size:18px;'>Today: " + str(datetime.date.today()) + "</div>"
@@ -230,8 +241,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("Beneficiaries Served by day")
-
 # ------------------------------
 # Responsive Layout (3 per row)
 # ------------------------------
@@ -275,14 +284,14 @@ for i in range(0, len(hospital_list), cols_per_row):
 
             def show_metric(label, value, avg_flag):
                 caption = (
-                    " <span style='color:#777;font-size:13px;'>*</span>"
+                    " <span style='color:#c01e2e;font-size:13px;'>*</span>"
                     if avg_flag
-                    else " <span style='color:#777;font-size:13px;'>(Today's data)</span>"
+                    else ""
                 )
                 value_html = f"<span style='font-weight:bold;font-size:18px;'>{value}</span>"
                 
                 st.markdown(
-                    f"<div style='font-size:14px;margin-bottom:6px;'>{label}:<br>{value_html}</br>{caption}",
+                    f"<div style='font-size:14px;margin-bottom:6px;'>{label}: {value_html}{caption}",
                     unsafe_allow_html=True
                 )
 

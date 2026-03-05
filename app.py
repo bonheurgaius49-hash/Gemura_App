@@ -275,14 +275,14 @@ for i in range(0, len(hospital_list), cols_per_row):
 
             def show_metric(label, value, avg_flag):
                 caption = (
-                    " <span style='color:#777;font-size:13px;'>(7 day average)</span>"
+                    " <span style='color:#777;font-size:13px;'>*</span>"
                     if avg_flag
                     else " <span style='color:#777;font-size:13px;'>(Today's data)</span>"
                 )
                 value_html = f"<span style='font-weight:bold;font-size:18px;'>{value}</span>"
                 
                 st.markdown(
-                    f"<div style='font-size:14px;margin-bottom:6px;'>{label}:<br>{value_html}{caption}</div>",
+                    f"<div style='font-size:14px;margin-bottom:6px;'>{label}:<br>{value_html}</br>{caption}",
                     unsafe_allow_html=True
                 )
 

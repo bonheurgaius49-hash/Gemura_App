@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Must be first Streamlit command
-st.set_page_config(page_title="Gemura Program Dashboard", page_icon="logo.png", layout="wide")
+st.set_page_config(page_title="SA Beneficiaries", page_icon="logo.png", layout="wide")
 # CSS for white paper, padding, rounded corners, black text
 st.markdown("""
 <style>

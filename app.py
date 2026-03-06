@@ -11,8 +11,8 @@ st.set_page_config(page_title="Gemura Program Dashboard", page_icon="logo.png", 
 st.markdown("""
 <style>
 div.block-container{
-    padding-left: 100px;
-    padding-right: 100px;
+    padding-left: 80px;
+    padding-right: 80px;
     padding-top: 50px;
     padding-bottom: 50px;
     font-family: 'Arial', sans-serif;
@@ -143,22 +143,18 @@ import datetime
 regular_merged["Date"] = pd.to_datetime(regular_merged["Date"])
 special_merged["Date"] = pd.to_datetime(special_merged["Date"])
 
-col1, col2 = st.columns([1, 6])
-
-with col1:
-    st.image("Sidebar_image.png", width=80)
-
-with col2:
-    st.markdown(
-        "<h1 style='color:#c01e2e;margin-bottom:0px;'>Gemura Program Dashboard</h1>",
-        unsafe_allow_html=True
-    )
-
 today = datetime.date.today()
 
-real_today = f"<div style='font-size:18px;'>Today: " + str(datetime.date.today()) + "</div>"
-st.markdown(real_today, unsafe_allow_html=True)
-
+yesterday = datetime.date.today() - datetime.timedelta(days=1)
+st.markdown(
+    f"""
+    <div style='display:flex; align-items:center; justify-content:space-between; width:100%;'>
+        <h1 style='color:#c01e2e; font-size:30px; margin:0;'>Gemura Program - Daily Beneficiaries To be Served</h1>
+        <div style='font-size:18px; font-weight:bold;'>🗓️{datetime.date.today()}</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 # ------------------------------
 # Metric Calculation Function
 # ------------------------------
@@ -172,14 +168,14 @@ def calculate_metric(df, hospital_name, diet_name=None):
     df_h["Date_only"] = df_h["Date"].dt.date
     
     # --- TODAY DATA ---
-    today_data = df_h[df_h["Date_only"] == today]
+    today_data = df_h[df_h["Date_only"] == yesterday]
     
     if not today_data.empty:
         value = today_data["Lunch"].sum()
         return round(value), False
     
     # --- 7-DAY AVERAGE (only days with submission) ---
-    past_data = df_h[df_h["Date_only"] < today]
+    past_data = df_h[df_h["Date_only"] < yesterday]
     
     if past_data.empty:
         return 0, False
@@ -200,8 +196,41 @@ def calculate_metric(df, hospital_name, diet_name=None):
     
     return round(avg_value), True
 
+def get_yesterday_comments_per_hospital(df, hospital_list, date_to_check=yesterday):
+    all_comments = []
 
-# ------------------------------
+    for hospital in hospital_list:
+        df_h = df[df["Hospital"] == hospital].copy()
+        df_h["Date_only"] = pd.to_datetime(df_h["Date"]).dt.date
+
+        yesterday_data = df_h[df_h["Date_only"] == date_to_check]
+
+        if yesterday_data.empty:
+            combined_comments = "no comment"
+        else:
+            comments = yesterday_data["Challenge_satisfaction"].dropna()
+            comments = comments[comments != 0]
+            comments = comments[comments != "0"]
+            comments = comments[comments.str.strip() != ""]
+
+            if comments.empty:
+                combined_comments = "no comment"
+            else:
+                comments_clean = comments.astype(str).str.replace(r"[\r\n]+", " ", regex=True).str.strip()
+                combined_comments = " | ".join(comments_clean)
+
+        # Choose color
+        color = "#808080" if combined_comments == "no comment" else "#000000"
+
+        hospital_comment_html = f"""
+        <div style='padding:2px 5px; margin-bottom:0px; font-size:13px;'>
+            <span style='font-weight:bold; color:#c01e2e;'>{hospital}:</span> 
+            <span style='font-weight:normal; color:{color};'>{combined_comments}</span>
+        </div>
+        """
+        all_comments.append(hospital_comment_html)
+
+    return "<div>".join(all_comments)
 # List of Hospitals
 # ------------------------------
 hospital_list = sorted(regular_merged["Hospital"].dropna().unique())
@@ -213,30 +242,25 @@ st.markdown("""
 <style>
 .hospital-card {
     background-color: white;
-    padding: 25px;
+    padding: 0px;
     border-radius: 18px;
     box-shadow: 2px 4px 15px rgba(0,0,0,0.08);
-    margin-bottom: 25px;
+    margin-bottom: 10px;
 }
 .hospital-title {
     color: #c01e2e;
     font-size: 22px;
     font-weight: bold;
-    margin-bottom: 15px;
+    margin-bottom: 5px;
 }
 .metric-row {
     font-size: 12px;
-    margin-bottom: 6px;
+    margin-bottom: 0px;
 }
 .caption {
     font-size: 13px;
     color: #777777;
     margin-left: 8px;
-}
-.total-meals {
-    margin-top: 12px;
-    font-weight: bold;
-    font-size: 18px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -254,7 +278,7 @@ for i in range(0, len(hospital_list), cols_per_row):
     for col, hospital in zip(cols, hospital_list[i:i+cols_per_row]):
         
         with col:
-            
+
             regular_value, regular_avg = calculate_metric(regular_merged, hospital)
             postpartum, postpartum_avg = calculate_metric(special_merged, hospital, "Post-Partum care diet")
             pediatric, pediatric_avg = calculate_metric(special_merged, hospital, "Pediatric care diet")
@@ -277,34 +301,58 @@ for i in range(0, len(hospital_list), cols_per_row):
 
             # 👇 RENDERING MUST STAY INSIDE HERE 👇
 
-            st.markdown(
-                f"<h3 style='color:#c01e2e;margin-bottom:0px;'>{hospital}</h3>",
-                unsafe_allow_html=True
-            )
-
             def show_metric(label, value, avg_flag):
-                caption = (
-                    " <span style='color:#c01e2e;font-size:13px;'>*</span>"
-                    if avg_flag
-                    else ""
-                )
-                value_html = f"<span style='font-weight:bold;font-size:18px;'>{value}</span>"
+                caption = " <span style='color:#c01e2e;font-size:13px;'>*</span>" if avg_flag else ""
+                label_html = f"<span style='color:#000000; padding-top:1px; font-size:12px;  border-top: 3px solid rgba(15, 23, 42, 0.5); margin-top:0px;'>{label}</span>"
+                value_html = f"<span style='color:#000000;font-weight:bold; font-size:22px; margin-bottom:0px;'>{value}</span>"
                 
-                st.markdown(
-                    f"<div style='font-size:14px;margin-bottom:6px;'>{label}: {value_html}{caption}",
-                    unsafe_allow_html=True
-                )
-
-            show_metric("Regular Diet", regular_value, regular_avg)
-            show_metric("Post-Partum diet", postpartum, postpartum_avg)
-            show_metric("Pediatric diet", pediatric, pediatric_avg)
-            show_metric("Easy digest diet", easy_digest, easy_avg)
-            show_metric("High energy diet", high_energy, high_avg)
-            show_metric("Diabetic diet", diabetic, diabetic_avg)
-            show_metric("No salt diet", sodium, sodium_avg)
-            show_metric("IZERE diets", izere, izere_avg)
+                return f"<div class='metric-part' style='padding:2px;'>{value_html}{caption}<br>{label_html}</br></div>"
+            
+            # Collect all metric parts
+            metric_parts = []
+            metric_parts.append(show_metric("Regular Diet", regular_value, regular_avg))
+            metric_parts.append(show_metric("Post-Partum", postpartum, postpartum_avg))
+            metric_parts.append(show_metric("Pediatric", pediatric, pediatric_avg))
+            metric_parts.append(show_metric("Easy digest", easy_digest, easy_avg))
+            metric_parts.append(show_metric("High energy", high_energy, high_avg))
+            metric_parts.append(show_metric("Diabetic", diabetic, diabetic_avg))
+            metric_parts.append(show_metric("No salt", sodium, sodium_avg))
+            metric_parts.append(show_metric("IZERE", izere, izere_avg))
+            
+            metrics_html = "".join(metric_parts)
+            
+            total_meals = f'<span style="font-size:25px; font-weight:bold; box-shadow: 2px 4px 15px rgba(0,0,0); color:#c01e2e; margin-top:0px; border:1px solid #c01e2e; padding-left:10px; padding-right:10px; border-radius:4px;">{total_meals}</span>'
 
             st.markdown(
-                f"<div style='margin-top:12px;font-weight:bold;font-size:18px;'>Total Meals: {total_meals}</div>",
+                f"""
+                <div class='hospital-card' style='padding:10px; border:2px solid #000000; border-radius:18px; background-color:#ffffff; margin-bottom:5px; box-shadow: 2px 4px 15px rgba(0,0,0);'>
+                <div style='background-color:#f3f4f6; font-size:25px; color:#c01e2e; border-bottom: 3px solid rgba(15, 23, 42, 0.5); border-top: 3px solid rgba(15, 23, 42, 0.5);text-align:center; border-radius:10px; font-weight:bold; Padding:4px;'>{hospital}</div>
+                <div style='display:grid; padding-left:4px; grid-template-columns: 1fr 1fr 1fr; gap:5px;'>{metrics_html}</div>
+                <div style='text-align:center; margin-top:0px; margin-bottom:0px; padding:0px;'>TOTAL MEALS: {total_meals}</div>
+                </div>
+                """,
                 unsafe_allow_html=True
-            )
+                )
+comments = get_yesterday_comments_per_hospital(regular_merged, hospital_list, yesterday) 
+hospital_title_html = f"""
+<div style="
+    font-size:22px; 
+    font-weight:bold; 
+    color:#c01e2e; 
+    text-align:center; 
+    margin-bottom:10px;
+">
+    {hospital}
+</div>
+"""
+comments = f"<div style='color:#000000; font-size:13px; font-weight:normal; padding:10px;'>{comments}</div>" if comments != "No comment" else "<span style='color:#8e8f91; font-size:12px; font-weight:normal; padding:10px;'>No comment</span>"
+
+st.markdown(
+    f"""
+    <div style='padding:10px;'>
+    <span style='margin-top:10px; font-size:14px; font-weight:bold; color:#777777; text-align:center;'>Comments/Recommendations: </span>
+    <div style='border: 1px solid #000000; border-radius:4px;'>{comments}</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)

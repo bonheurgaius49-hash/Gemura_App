@@ -146,15 +146,22 @@ special_merged["Date"] = pd.to_datetime(special_merged["Date"])
 today = datetime.date.today()
 
 yesterday = datetime.date.today() - datetime.timedelta(days=1)
-st.markdown(
-    f"""
-    <div style='display:flex; align-items:center; justify-content:space-between; width:100%;'>
-        <h1 style='color:#c01e2e; font-size:30px; margin:0;'>Gemura Program - Daily Beneficiaries To be Served</h1>
-        <div style='font-size:18px; font-weight:bold;'>🗓️{datetime.date.today()}</div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+col1, col2, col3 = st.columns([1, 5, 1])
+
+with col1:
+    st.image("Sidebar_image.png", width=80)
+
+with col2:
+    st.markdown(
+        "<h1 style='color:#c01e2e; font-size:30px; margin:0; text-align:center;'>Gemura Program - Daily Beneficiaries To be Served</h1>",
+        unsafe_allow_html=True
+    )
+
+with col3:
+    st.markdown(
+        f"<div style='font-size:18px; text-align:right; font-weight: bold;'>🗓️ {datetime.date.today()}</div>",
+        unsafe_allow_html=True
+    )
 # ------------------------------
 # Metric Calculation Function
 # ------------------------------

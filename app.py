@@ -11,10 +11,10 @@ st.set_page_config(page_title="SA Beneficiaries", page_icon="logo.png", layout="
 st.markdown("""
 <style>
 div.block-container{
-    padding-left: 80px;
-    padding-right: 80px;
-    padding-top: 50px;
-    padding-bottom: 50px;
+    padding-left: 40px;
+    padding-right: 40px;
+    padding-top: 30px;
+    padding-bottom: 10px;
     font-family: 'Arial', sans-serif;
 }
 
@@ -143,25 +143,33 @@ import datetime
 regular_merged["Date"] = pd.to_datetime(regular_merged["Date"])
 special_merged["Date"] = pd.to_datetime(special_merged["Date"])
 
-today = datetime.date.today()
+today = datetime.date.today().strftime('%A, %d-%b-%Y')
 
 yesterday = datetime.date.today() - datetime.timedelta(days=1)
-col1, col2, col3 = st.columns([1, 5, 1])
 
-with col1:
-    st.image("Sidebar_image.png", width=80)
+import base64
 
-with col2:
-    st.markdown(
-        "<h1 style='color:#c01e2e; font-size:30px; margin:0; text-align:center;'>Gemura Program - Daily Beneficiaries To be Served</h1>",
-        unsafe_allow_html=True
-    )
+def img_to_base64(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
-with col3:
-    st.markdown(
-        f"<div style='font-size:18px; text-align:right; font-weight: bold;'>🗓️ {datetime.date.today()}</div>",
-        unsafe_allow_html=True
-    )
+image_path = "Sidebar_image.png"
+image_base64 = img_to_base64(image_path)
+
+title = f'<span style="margin: 0; color: #c01e2e; font-size: 28px;">Gemura Program - Daily Beneficiaries To be Served</span>'
+
+title_section = [image_base64, title, today]
+
+html_header = f"""
+<div style='display:grid; grid-template-columns: auto 1fr auto; align-items:center; gap:10px;'>
+    <img src='data:image/png;base64,{image_base64}' width='80'/>
+    <span style='color:#c01e2e; font-size:28px; text-align:center; font-weight:bold;'>Gemura Program - Daily Beneficiaries To be Served</span>
+    <span style='font-size:18px; font-weight:normal; text-align:right;'>🗓️ {today}</span>
+</div>
+"""
+st.markdown(html_header, unsafe_allow_html=True)
+
 # ------------------------------
 # Metric Calculation Function
 # ------------------------------
@@ -310,7 +318,7 @@ for i in range(0, len(hospital_list), cols_per_row):
 
             def show_metric(label, value, avg_flag):
                 caption = " <span style='color:#c01e2e;font-size:13px;'>*</span>" if avg_flag else ""
-                label_html = f"<span style='color:#000000; padding-top:1px; font-size:12px;  border-top: 3px solid rgba(15, 23, 42, 0.5); margin-top:0px;'>{label}</span>"
+                label_html = f"<span style='color:#000000; padding-top:1px; font-size:10px;  border-top: 3px solid rgba(15, 23, 42, 0.5); margin-top:0px;'>{label}</span>"
                 value_html = f"<span style='color:#000000;font-weight:bold; font-size:22px; margin-bottom:0px;'>{value}</span>"
                 
                 return f"<div class='metric-part' style='padding:2px;'>{value_html}{caption}<br>{label_html}</br></div>"
@@ -332,14 +340,20 @@ for i in range(0, len(hospital_list), cols_per_row):
 
             st.markdown(
                 f"""
-                <div class='hospital-card' style='padding:10px; border:2px solid #000000; border-radius:18px; background-color:#ffffff; margin-bottom:5px; box-shadow: 2px 4px 15px rgba(0,0,0);'>
+                <div class='hospital-card' style='padding:10px; border:2px solid #000000; border-radius:18px; background-color:#ffffff; margin-bottom:5px; margin-top:0px; box-shadow: 2px 4px 15px rgba(0,0,0);'>
                 <div style='background-color:#f3f4f6; font-size:25px; color:#c01e2e; border-bottom: 3px solid rgba(15, 23, 42, 0.5); border-top: 3px solid rgba(15, 23, 42, 0.5);text-align:center; border-radius:10px; font-weight:bold; Padding:4px;'>{hospital}</div>
                 <div style='display:grid; padding-left:4px; grid-template-columns: 1fr 1fr 1fr; gap:5px;'>{metrics_html}</div>
-                <div style='text-align:center; margin-top:0px; margin-bottom:0px; padding:0px;'>TOTAL MEALS: {total_meals}</div>
+                <div style='color: #000000; text-align:center; margin-top:0px; margin-bottom:0px; padding:0px;'>TOTAL MEALS: {total_meals}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
                 )
+st.markdown(
+    f"""
+    <span style='color:#c01e2e;font-size:13px;'>*</span><span style='color:#8e8f91; font-size:12px; font-weight:normal; padding-top:10px;'> :No submission - returning 7 days Average</span>
+""",
+unsafe_allow_html=True
+)
 comments = get_yesterday_comments_per_hospital(regular_merged, hospital_list, yesterday) 
 hospital_title_html = f"""
 <div style="
@@ -352,13 +366,13 @@ hospital_title_html = f"""
     {hospital}
 </div>
 """
-comments = f"<div style='color:#000000; font-size:13px; font-weight:normal; padding:10px;'>{comments}</div>" if comments != "No comment" else "<span style='color:#8e8f91; font-size:12px; font-weight:normal; padding:10px;'>No comment</span>"
+comments = f"<div style='font-size:13px; font-weight:normal; padding-top:10px;'>{comments}</div>" if comments != "No comment" else "<span style='color:#8e8f91; font-size:12px; font-weight:normal; padding:10px;'>No comment</span>"
 
 st.markdown(
     f"""
-    <div style='padding:10px;'>
-    <span style='margin-top:10px; font-size:14px; font-weight:bold; color:#777777; text-align:center;'>Comments/Recommendations: </span>
-    <div style='border: 1px solid #000000; border-radius:4px;'>{comments}</div>
+    <div style='padding-top:0px;'>
+    <span style='margin-top:0px; font-size:14px; font-weight:bold; color:#777777; text-align:center;'>Comments/Recommendations: </span>
+    <div style='border: 1px solid #000000; background-color: #FFFFFF; border-radius:4px;'>{comments}</div>
     </div>
     """,
     unsafe_allow_html=True
